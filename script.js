@@ -1,11 +1,10 @@
 // Game variables
 let gameBoard = ['', '', '', '', '', '', '', '', ''];
 let playerMoves = { X: [], O: [] };
-let blockedCells = { X: [], O: [] };
 let gameActive = true;
 let isPlayerTurn = true;
 let gameMode = 'normal';
-let timeLeft = 30;
+let timeLeft = 5;
 let timer = null;
 let aiThinking = false;
 
@@ -23,7 +22,7 @@ const timeLeftDisplay = document.getElementById('timeLeft');
 const winningLines = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
     [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
-    [0, 4, 8], [2, 4, 6] // diagonals
+    [0, 4, 8], [2, 4, 6]             // diagonals
 ];
 
 // Initialize game
@@ -43,7 +42,7 @@ function startGame() {
 // Handle player move
 function playerClick(cellIndex) {
     if (!gameActive || !isPlayerTurn || aiThinking) return;
-    if (gameBoard[cellIndex] !== '' || blockedCells.X.includes(cellIndex)) return;
+    if (gameBoard[cellIndex] !== '') return;
 
     makeMove(cellIndex, 'X');
     
@@ -57,32 +56,20 @@ function playerClick(cellIndex) {
                 updateDisplay();
                 makeAIMove();
             }
-        }, 1000);
+        }, 500);
     }
 }
 
-// AI makes move
+// AI makes move using Minimax
 function makeAIMove() {
     if (!gameActive || isPlayerTurn) return;
 
-    let aiMove = findWinningMove('O');
-    if (aiMove === -1) aiMove = findWinningMove('X');
-    if (aiMove === -1) {
-        const availableMoves = [];
-        for (let i = 0; i < 9; i++) {
-            if (gameBoard[i] === '' && !blockedCells.O.includes(i)) {
-                availableMoves.push(i);
-            }
-        }
-        aiMove = availableMoves.length > 0 
-            ? availableMoves[Math.floor(Math.random() * availableMoves.length)]
-            : -1;
+    const { move } = minimax(gameBoard.slice(), 0, true);
+
+    if (move !== -1) {
+        makeMove(move, 'O');
     }
 
-    if (aiMove !== -1) {
-        makeMove(aiMove, 'O');
-    }
-    
     aiThinking = false;
     isPlayerTurn = true;
     updateDisplay();
@@ -93,15 +80,12 @@ function makeMove(cellIndex, player) {
     if (gameMode === 'timed' && timer) clearInterval(timer);
     clearEffects();
 
-    // Handle mark limit
+    // Handle mark limit (3 marks max per player)
     if (playerMoves[player].length >= 3) {
         const oldestCell = playerMoves[player].shift();
         gameBoard[oldestCell] = '';
         cells[oldestCell].textContent = '';
         cells[oldestCell].classList.remove('x-mark', 'o-mark');
-        blockedCells[player] = [oldestCell];
-    } else {
-        blockedCells[player] = [];
     }
 
     // Place new mark
@@ -112,45 +96,76 @@ function makeMove(cellIndex, player) {
 
     updateDisplay();
     checkGameEnd();
-    
+
     if (gameActive && gameMode === 'timed') startTimer();
 }
 
-// Helper functions
-function findWinningMove(player) {
-    for (let i = 0; i < 9; i++) {
-        if (gameBoard[i] !== '' || blockedCells[player].includes(i)) continue;
-        
-        gameBoard[i] = player;
-        const isWin = winningLines.some(line => 
-            line.every(index => gameBoard[index] === player)
-        );
-        gameBoard[i] = '';
-        
-        if (isWin) return i;
+// Minimax algorithm
+function minimax(board, depth, isMaximizing) {
+    const winner = checkWinner(board);
+    if (winner !== null) {
+        if (winner === 'O') return { score: 10 - depth };
+        if (winner === 'X') return { score: depth - 10 };
+        return { score: 0 }; // draw
     }
-    return -1;
+
+    const availableMoves = board.map((val, idx) => val === '' ? idx : null).filter(idx => idx !== null);
+
+    if (isMaximizing) {
+        let bestScore = -Infinity;
+        let bestMove = -1;
+        for (let move of availableMoves) {
+            board[move] = 'O';
+            const result = minimax(board, depth + 1, false);
+            board[move] = '';
+            if (result.score > bestScore) {
+                bestScore = result.score;
+                bestMove = move;
+            }
+        }
+        return { score: bestScore, move: bestMove };
+    } else {
+        let bestScore = Infinity;
+        let bestMove = -1;
+        for (let move of availableMoves) {
+            board[move] = 'X';
+            const result = minimax(board, depth + 1, true);
+            board[move] = '';
+            if (result.score < bestScore) {
+                bestScore = result.score;
+                bestMove = move;
+            }
+        }
+        return { score: bestScore, move: bestMove };
+    }
 }
 
-function checkGameEnd() {
-    // Check for winner
-    for (const line of winningLines) {
-        const [a, b, c] = line;
-        if (gameBoard[a] && gameBoard[a] === gameBoard[b] && gameBoard[a] === gameBoard[c]) {
-            endGame(gameBoard[a]);
-            return;
+// Check winner or draw
+function checkWinner(board) {
+    for (const [a, b, c] of winningLines) {
+        if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+            return board[a];
         }
     }
 
-    // Check for draw
-    const canPlayerMove = gameBoard.some((cell, i) => cell === '' && !blockedCells.X.includes(i));
-    const canAIMove = gameBoard.some((cell, i) => cell === '' && !blockedCells.O.includes(i));
-    
-    if (!canPlayerMove && !canAIMove) {
+    if (board.every(cell => cell !== '')) {
+        return 'Draw';
+    }
+
+    return null;
+}
+
+// Check for game end (win or draw)
+function checkGameEnd() {
+    const winner = checkWinner(gameBoard);
+    if (winner === 'X' || winner === 'O') {
+        endGame(winner);
+    } else if (winner === 'Draw') {
         endGame(null);
     }
 }
 
+// End game display
 function endGame(winner) {
     gameActive = false;
     aiThinking = false;
@@ -174,7 +189,7 @@ function endGame(winner) {
     }
 }
 
-// Display updates
+// Update UI display
 function updateDisplay() {
     // Turn indicator
     if (gameActive) {
@@ -199,10 +214,7 @@ function updateDisplay() {
 
     // Board state
     cells.forEach((cell, index) => {
-        cell.classList.toggle('blocked', 
-            blockedCells.X.includes(index) || blockedCells.O.includes(index)
-        );
-        cell.classList.remove('oldest');
+        cell.classList.remove('blocked', 'oldest');
     });
 
     // Highlight oldest marks
@@ -216,7 +228,7 @@ function updateDisplay() {
 
 // Timer functions
 function startTimer() {
-    timeLeft = 30;
+    timeLeft = 5;
     updateTimerDisplay();
     
     timer = setInterval(() => {
@@ -246,10 +258,9 @@ function clearEffects() {
 function resetGame() {
     gameBoard = ['', '', '', '', '', '', '', '', ''];
     playerMoves = { X: [], O: [] };
-    blockedCells = { X: [], O: [] };
     gameActive = true;
     isPlayerTurn = true;
-    timeLeft = 30;
+    timeLeft = 5;
     aiThinking = false;
 
     if (timer) {
@@ -271,5 +282,5 @@ function resetGame() {
     if (gameMode === 'timed') startTimer();
 }
 
-// Start game
+// Start game on page load
 document.addEventListener('DOMContentLoaded', startGame);
